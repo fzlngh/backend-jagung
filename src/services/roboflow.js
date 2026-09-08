@@ -1,4 +1,3 @@
-import fs from "fs";
 import fetch from "node-fetch";
 
 export const CORN_CLASSES = {
@@ -68,7 +67,7 @@ function normalizeLabel(rawLabel) {
   return null;
 }
 
-export async function classifyImage(filePath) {
+export async function classifyImage(imageBuffer, mimetype) {
   const useMock =
     String(process.env.USE_MOCK_INFERENCE || "false").toLowerCase() ===
     "true";
@@ -76,6 +75,10 @@ export async function classifyImage(filePath) {
   if (useMock) {
     console.log("[inference] Using mock inference");
     return mockClassify();
+  }
+
+  if (!Buffer.isBuffer(imageBuffer)) {
+    throw new Error("Invalid image data. Expected a Buffer.");
   }
 
   const apiKey = process.env.ROBOFLOW_API_KEY;
@@ -93,16 +96,21 @@ export async function classifyImage(filePath) {
     );
   }
 
-  const base64Image = fs.readFileSync(filePath, {
-    encoding: "base64",
-  });
+  if (!mimetype) {
+    throw new Error("Image MIME type is missing.");
+  }
+
+  const base64Image = imageBuffer.toString("base64");
 
   const endpoint =
     `${apiUrl.replace(/\/$/, "")}/` +
     `${modelId}?api_key=${encodeURIComponent(apiKey)}`;
 
   console.log("[inference] Sending image to Roboflow...");
-  console.log("[inference] Endpoint:", endpoint.replace(apiKey, "***"));
+  console.log(
+    "[inference] Endpoint:",
+    endpoint.replace(apiKey, "***")
+  );
 
   const controller = new AbortController();
 
@@ -133,7 +141,9 @@ export async function classifyImage(filePath) {
     }
 
     throw new Error(
-      `Could not reach Roboflow inference API: ${error?.message || error}`
+      `Could not reach Roboflow inference API: ${
+        error?.message || error
+      }`
     );
   } finally {
     clearTimeout(timeout);
@@ -208,13 +218,6 @@ function normalizeRoboflowResponse(data) {
     scores[slug] = confidence;
   }
 
-  /*
-   * Roboflow already tells us the predicted class through
-   * predicted_classes.
-   *
-   * We still calculate the highest confidence ourselves as a
-   * fallback in case predicted_classes is missing.
-   */
   let predictedSlug = null;
 
   const predictedClasses = Array.isArray(data?.predicted_classes)
